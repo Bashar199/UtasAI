@@ -31,8 +31,8 @@ def get_available_dates(start_date_str, end_date_str, holidays_str):
 
         current_date = start_date
         while current_date <= end_date:
-            # Exclude weekends (Saturday=5, Sunday=6) and holidays
-            if current_date.weekday() < 5 and current_date not in holidays:
+            # Exclude Fridays (weekday=4) and holidays
+            if current_date.weekday() != 4 and current_date not in holidays:
                 available_dates.append(current_date.isoformat())
             current_date += timedelta(days=1)
             
