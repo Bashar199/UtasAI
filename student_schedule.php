@@ -1,286 +1,210 @@
 <?php
-// Include database configuration
-$db_config = [
-    'host' => 'localhost',
-    'user' => 'root',
-    'password' => '',
-    'database' => 'dataUTAS'
-];
+require_once 'config.php';
 
-// Function to get student information
-function getStudentInfo($conn, $student_id) {
-    $stmt = $conn->prepare("SELECT student_id, academic_level FROM Students WHERE student_id = ?");
-    $stmt->bind_param("s", $student_id);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    if ($result->num_rows > 0) {
-        return $result->fetch_assoc();
-    }
-    return null;
+$student_id = null;
+$student_courses = [];
+$schedule_data = [];
+$error_message = null;
+$schedule_string = null;
+
+// Function to safely get POST data
+function get_post_var($key, $default = null) {
+    return isset($_POST[$key]) ? htmlspecialchars(trim($_POST[$key])) : $default;
 }
 
-// Function to get student's enrolled courses
-function getStudentCourses($conn, $student_id) {
-    $stmt = $conn->prepare("
-        SELECT ce.course_code, c.course_name, c.academic_level
-        FROM CourseEnrollments ce
-        JOIN Courses c ON ce.course_code = c.course_code
-        WHERE ce.student_id = ?
-        ORDER BY ce.course_code
-    ");
-    $stmt->bind_param("s", $student_id);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $courses = [];
-    while ($row = $result->fetch_assoc()) {
-        $courses[] = $row;
-    }
-    return $courses;
-}
-
-// Function to get exam schedule from JSON file
-function getExamSchedule() {
-    $schedule_file = 'process/schedule_result.json';
-    if (!file_exists($schedule_file)) {
-        return ['error' => 'Exam schedule file not found. Please generate a schedule first.'];
-    }
-    
-    $schedule_data = json_decode(file_get_contents($schedule_file), true);
-    if (!isset($schedule_data['suggestion'])) {
-        return ['error' => 'No valid exam schedule found. Please generate a schedule first.'];
-    }
-    
-    $suggestion = $schedule_data['suggestion'];
-    $exam_schedule = [];
-    
-    // Parse the schedule text
-    $lines = explode("\n", $suggestion);
-    foreach ($lines as $line) {
-        if (strpos($line, ':') !== false) {
-            $parts = explode(':', $line, 2);
-            if (count($parts) == 2) {
-                $date_part = trim($parts[0]);
-                // Remove numbering if present
-                if (strpos($date_part, '.') !== false) {
-                    $date_part = trim(explode('.', $date_part, 2)[1]);
-                }
-                
-                $course_part = trim($parts[1]);
-                // Only add actual exam dates (not study days)
-                if ($course_part != "Study Day") {
-                    $exam_schedule[$course_part] = $date_part;
-                }
+// --- 1. Load the Master Schedule --- 
+$schedule_file = SCHEDULE_FILE_PATH;
+if (file_exists($schedule_file)) {
+    $json_content = file_get_contents($schedule_file);
+    $schedule_result = json_decode($json_content, true);
+    if (isset($schedule_result['suggestion'])) {
+        $schedule_string = $schedule_result['suggestion'];
+        // Extract schedule lines (e.g., YYYY-MM-DD: CourseCode or Study Day)
+        // Regex: Matches date, colon, space, and course code (3 letters, 3 digits) OR Study Day
+        preg_match_all('/(\d{4}-\d{2}-\d{2}):\s*([A-Z]{3}\d{3}|Study Day)/', $schedule_string, $matches, PREG_SET_ORDER);
+        
+        foreach ($matches as $match) {
+            if (isset($match[1]) && isset($match[2])) {
+                $schedule_data[$match[1]] = $match[2]; // Key: Date, Value: Course Code or "Study Day"
             }
         }
-    }
-    
-    return $exam_schedule;
-}
-
-// Process search from either POST or GET
-$search_error = '';
-$student = null;
-$student_exams = [];
-$student_id = '';
-
-// Check for GET parameter (from index.php redirect)
-if (isset($_GET['student_id']) && !empty($_GET['student_id'])) {
-    $student_id = trim($_GET['student_id']);
-}
-// Check for POST parameter (from direct form submission)
-else if (isset($_POST['search']) && !empty($_POST['student_id'])) {
-    $student_id = trim($_POST['student_id']);
-}
-
-// Process the student ID if we have one
-if (!empty($student_id)) {
-    // Connect to database
-    $conn = new mysqli($db_config['host'], $db_config['user'], $db_config['password'], $db_config['database']);
-    if ($conn->connect_error) {
-        $search_error = "Database connection failed: " . $conn->connect_error;
+        // Sort by date just in case the text file isn't perfectly ordered
+        ksort($schedule_data);
+    } elseif (isset($schedule_result['error'])) {
+        $error_message = "Error loading schedule file: " . $schedule_result['error'];
     } else {
-        // Get student information
-        $student = getStudentInfo($conn, $student_id);
-        if (!$student) {
-            $search_error = "Student with ID '$student_id' not found.";
-        } else {
-            // Get courses the student is enrolled in
-            $courses = getStudentCourses($conn, $student_id);
-            
-            // Get exam schedule
-            $exam_schedule = getExamSchedule();
-            if (isset($exam_schedule['error'])) {
-                $search_error = $exam_schedule['error'];
-            } else {
-                // Match enrolled courses with exam dates
-                foreach ($courses as $course) {
-                    $course_code = $course['course_code'];
-                    if (isset($exam_schedule[$course_code])) {
-                        $student_exams[] = [
-                            'date' => $exam_schedule[$course_code],
-                            'course_code' => $course_code,
-                            'course_name' => $course['course_name'],
-                            'level' => $course['academic_level']
-                        ];
-                    }
-                }
-                
-                // Sort by date
-                usort($student_exams, function($a, $b) {
-                    return $a['date'] <=> $b['date'];
-                });
+         $error_message = "Could not parse schedule data from " . $schedule_file;
+    }
+} else {
+    $error_message = "Schedule file not found at " . $schedule_file;
+}
+
+// --- 2. Handle Form Submission --- 
+if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error_message) {
+    $student_id = get_post_var('student_id');
+
+    if (empty($student_id)) {
+        $error_message = "Please enter a Student ID.";
+    } else {
+        // --- 3. Fetch Student's Courses from Database --- 
+        try {
+            $conn = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
+            if ($conn->connect_error) {
+                throw new Exception("Connection failed: " . $conn->connect_error);
             }
+
+            // Prepare statement to prevent SQL injection
+            $stmt = $conn->prepare("SELECT course_code FROM CourseEnrollments WHERE student_id = ?");
+            $stmt->bind_param("s", $student_id);
+            $stmt->execute();
+            $result = $stmt->get_result();
+
+            if ($result->num_rows > 0) {
+                while ($row = $result->fetch_assoc()) {
+                    $student_courses[] = $row['course_code'];
+                }
+            } else {
+                $error_message = "Student ID '{$student_id}' not found or has no enrollments.";
+            }
+            
+            $stmt->close();
+            $conn->close();
+
+        } catch (Exception $e) {
+            $error_message = "Database error: " . $e->getMessage();
         }
-        $conn->close();
     }
 }
-?>
 
+// --- 4. Filter Schedule for the Student --- 
+$student_schedule = [];
+if ($student_id && !empty($student_courses) && !empty($schedule_data)) {
+    foreach ($schedule_data as $date => $item) {
+        // Include if it's a course the student is enrolled in OR if it's a Study Day 
+        // (assuming students might want to see study days in their schedule)
+        if ($item == 'Study Day' || in_array($item, $student_courses)) {
+            $student_schedule[$date] = $item;
+        }
+    }
+}
+
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Student Exam Schedule</title>
+    <link rel="stylesheet" href="css/styles.css"> 
     <style>
         body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background-color: #f5f5f5;
+            font-family: sans-serif;
+            margin: 20px;
         }
         .container {
-            max-width: 800px;
-            margin: 0 auto;
-            background-color: white;
+            max-width: 600px;
+            margin: auto;
             padding: 20px;
+            border: 1px solid #ccc;
             border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        h1 {
-            color: #333;
-            margin-top: 0;
-            text-align: center;
-        }
-        .search-form {
-            text-align: center;
-            margin-bottom: 20px;
-            padding: 15px;
-            background-color: #f9f9f9;
-            border-radius: 8px;
-        }
-        .search-form input[type="text"] {
-            padding: 8px 12px;
-            width: 200px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-        }
-        .search-form button {
-            padding: 8px 16px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
         }
         .error {
-            color: #D8000C;
-            background-color: #FFD2D2;
-            padding: 10px;
-            margin-bottom: 20px;
-            border-radius: 4px;
+            color: red;
+            margin-bottom: 15px;
         }
-        .student-info {
-            margin-bottom: 20px;
-            padding: 10px;
-            background-color: #e7f3fe;
-            border-left: 6px solid #2196F3;
-        }
-        table {
+        .schedule-table {
             width: 100%;
             border-collapse: collapse;
             margin-top: 20px;
         }
-        th, td {
-            padding: 10px;
+        .schedule-table th, .schedule-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
             text-align: left;
-            border-bottom: 1px solid #ddd;
         }
-        th {
+        .schedule-table th {
             background-color: #f2f2f2;
-            font-weight: bold;
         }
-        tr:hover {
-            background-color: #f5f5f5;
+        .form-group {
+            margin-bottom: 15px;
         }
-        .no-exams {
-            text-align: center;
-            padding: 20px;
-            background-color: #ffffd6;
+        label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        input[type="text"] {
+            width: calc(100% - 22px); /* Adjust for padding and border */
+            padding: 10px;
+            border: 1px solid #ccc;
             border-radius: 4px;
         }
-        .back-link {
-            display: inline-block;
-            margin-bottom: 20px;
-            color: #2196F3;
-            text-decoration: none;
+        .button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
         }
-        .back-link:hover {
-            text-decoration: underline;
+        .button:hover {
+            background-color: #45a049;
+        }
+        a.home-link {
+             display: inline-block;
+             margin-top: 20px;
+             color: #007bff;
+             text-decoration: none;
+        }
+        a.home-link:hover {
+             text-decoration: underline;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <a href="index.php" class="back-link">← Back to Home</a>
-        <h1>Student Exam Schedule</h1>
-        
-        <div class="search-form">
-            <form method="post" action="">
-                <input type="text" name="student_id" placeholder="Enter Student ID" required value="<?php echo htmlspecialchars($student_id); ?>">
-                <button type="submit" name="search">Search</button>
-            </form>
-            <p><small>Example: 10d12345, 11a12345, or 12s12345</small></p>
+
+<div class="container">
+    <h1>Student Exam Schedule Search</h1>
+
+    <form method="POST" action="student_schedule.php">
+        <div class="form-group">
+            <label for="student_id">Enter Student ID:</label>
+            <input type="text" id="student_id" name="student_id" value="<?php echo $student_id ?? ''; ?>" required>
         </div>
-        
-        <?php if (!empty($search_error)): ?>
-            <div class="error"><?php echo $search_error; ?></div>
-        <?php endif; ?>
-        
-        <?php if ($student): ?>
-            <div class="student-info">
-                <h2>Student: <?php echo htmlspecialchars($student['student_id']); ?></h2>
-                <p><strong>Academic Level:</strong> <?php echo htmlspecialchars($student['academic_level']); ?></p>
-            </div>
-            
-            <?php if (empty($student_exams)): ?>
-                <div class="no-exams">
-                    <p>No exams scheduled for your enrolled courses.</p>
-                </div>
-            <?php else: ?>
-                <h3>Your Exam Schedule</h3>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Course Code</th>
-                            <th>Course Name</th>
-                            <th>Level</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($student_exams as $exam): ?>
-                            <tr>
-                                <td><?php echo htmlspecialchars($exam['date']); ?></td>
-                                <td><?php echo htmlspecialchars($exam['course_code']); ?></td>
-                                <td><?php echo htmlspecialchars($exam['course_name']); ?></td>
-                                <td><?php echo htmlspecialchars($exam['level']); ?></td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            <?php endif; ?>
-        <?php endif; ?>
-    </div>
+        <button type="submit" class="button">Search Schedule</button>
+    </form>
+
+    <?php if ($error_message): ?>
+        <p class="error"><?php echo $error_message; ?></p>
+    <?php endif; ?>
+
+    <?php if ($student_id && !$error_message && !empty($student_schedule)): ?>
+        <h2>Exam Schedule for <?php echo $student_id; ?></h2>
+        <table class="schedule-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Exam / Activity</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($student_schedule as $date => $item): ?>
+                <tr>
+                    <td><?php echo $date; ?></td>
+                    <td><?php echo $item; ?></td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    <?php elseif ($student_id && !$error_message && empty($student_courses)): ?>
+         <p>No enrollments found for student ID '<?php echo $student_id; ?>'.</p>
+    <?php elseif ($student_id && !$error_message && empty($student_schedule)): ?>
+        <p>No exams scheduled for the courses enrolled by student ID '<?php echo $student_id; ?>' within the active schedule period.</p>
+    <?php endif; ?>
+
+    <a href="index.php" class="home-link">&larr; Back to Home</a>
+
+</div>
+
 </body>
 </html> 
