@@ -47,6 +47,9 @@ if (file_exists($resultFilePath)) {
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Include flatpickr CSS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <!-- Include FullCalendar CSS -->
+    <link href='reference/php-event-calendar/fullcalendar/packages/core/main.css' rel='stylesheet' />
+    <link href='reference/php-event-calendar/fullcalendar/packages/daygrid/main.css' rel='stylesheet' />
     <script>
         // Optional: Configure Tailwind if needed
         // tailwind.config = {
@@ -216,14 +219,14 @@ if (file_exists($resultFilePath)) {
                      <?php
                      if ($load_error) {
                          echo "<p class=\"text-red-600 font-semibold\">Error loading schedule:</p>";
-                         echo htmlspecialchars($load_error);
+                         echo "<pre class=\"text-xs text-gray-600 bg-red-50 p-2 rounded\">" . htmlspecialchars($load_error) . "</pre>";
                      } elseif ($loaded_result) {
                          if (isset($loaded_result['error'])) {
                              echo "<p class=\"text-orange-600 font-semibold\">Saved Error:</p>";
-                             echo htmlspecialchars($loaded_result['error']);
+                             echo "<pre class=\"text-xs text-gray-600 bg-orange-50 p-2 rounded\">" . htmlspecialchars($loaded_result['error']) . "</pre>";
                          } elseif (isset($loaded_result['suggestion'])) {
-                             echo "<p class=\"text-green-700 font-semibold mb-3\">Saved Suggestion:</p>";
-                             // Parse the suggestion into a table
+                             echo "<p class=\"text-green-700 font-semibold mb-3\">Saved Schedule:</p>";
+                             // Parse the suggestion
                              $suggestion_lines = explode("\n", trim($loaded_result['suggestion']));
                              $schedule_data = [];
                              $parsing_errors = [];
@@ -231,50 +234,70 @@ if (file_exists($resultFilePath)) {
                                  $line = trim($line);
                                  if (empty($line)) continue;
                                  // Updated regex: Expect format like "#. YYYY-MM-DD: COURSE_CODE" or "#. YYYY-MM-DD: Study Day"
-                                 // It captures the date in group 1 and the course/study day in group 2
                                  if (preg_match('/^\d+\.\s*(\d{4}-\d{2}-\d{2})\s*:\s*(\S+.*)/i', $line, $matches)) {
                                      $schedule_data[] = ['date' => trim($matches[1]), 'course' => trim($matches[2])];
                                  } else {
-                                     // Handle lines that don't match the numbered list format
-                                     // Ignore introductory/concluding text from the AI
-                                     if (!preg_match('/^\d{4}-\d{2}-\d{2}/i', $line)) { // Basic check if it starts like a date line
-                                          $parsing_errors[] = $line; // Keep lines that aren't schedule entries
+                                     // Keep lines that aren't schedule entries but ignore common intro/outro text patterns
+                                     if (!preg_match('/^\d{4}-\d{2}-\d{2}/i', $line) && !preg_match('/^(here is|based on|schedule|note:|```)/i', $line)) {
+                                         $parsing_errors[] = $line;
                                      }
                                  }
                              }
 
-                             if (!empty($schedule_data)) {
-                                 echo '<table class="min-w-full divide-y divide-gray-200 border">';
-                                 echo '<thead class="bg-gray-100"><tr>';
-                                 echo '<th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>';
-                                 echo '<th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Course</th>';
-                                 echo '</tr></thead>';
-                                 echo '<tbody class="bg-white divide-y divide-gray-200">';
-                                 foreach ($schedule_data as $item) {
-                                     echo '<tr>';
-                                     echo '<td class="px-4 py-2 whitespace-nowrap">' . htmlspecialchars($item['date']) . '</td>';
-                                     echo '<td class="px-4 py-2 whitespace-nowrap">' . htmlspecialchars($item['course']) . '</td>';
-                                     echo '</tr>';
-                                 }
-                                 echo '</tbody></table>';
-                             }
-
+                             // Display parsing errors if any
                              if (!empty($parsing_errors)) {
-                                 echo '<p class="text-yellow-600 font-semibold mt-4">Note: Some lines from the saved suggestion could not be formatted into the table:</p>';
-                                 echo '<ul class="list-disc list-inside text-xs text-gray-600">';
+                                 echo '<p class="text-yellow-600 font-semibold mt-4">Note: Some lines from the saved suggestion could not be parsed as schedule entries:</p>';
+                                 echo '<ul class="list-disc list-inside text-xs text-gray-600 bg-yellow-50 p-2 rounded mb-3">';
                                  foreach ($parsing_errors as $error_line) {
                                      echo '<li>' . htmlspecialchars($error_line) . '</li>';
                                  }
                                  echo '</ul>';
                              }
-                              if (empty($schedule_data) && empty($parsing_errors)) {
-                                 echo '<p class="text-gray-500">(Saved suggestion received but contained no parsable schedule lines)</p>';
-                                 echo "<pre class=\"text-xs text-gray-600\">" . htmlspecialchars($loaded_result['suggestion']) . "</pre>";
-                              }
+
+                             // Prepare for FullCalendar
+                             if (!empty($schedule_data)) {
+                                 echo '<div id="schedule-calendar" class="mb-4"></div>'; // Container for FullCalendar
+                                 // Encode data for JavaScript
+                                 $calendar_events_json = json_encode(array_map(function($item) {
+                                     return ['title' => $item['course'], 'start' => $item['date']];
+                                 }, $schedule_data));
+
+                                 echo <<<JS
+                                 <script>
+                                     document.addEventListener('DOMContentLoaded', function() {
+                                         var calendarEl = document.getElementById('schedule-calendar');
+                                         if (calendarEl) {
+                                             var calendarEvents = {$calendar_events_json};
+                                             var calendar = new FullCalendar.Calendar(calendarEl, {
+                                                 plugins: [ 'dayGrid' ],
+                                                 initialView: 'dayGridMonth',
+                                                 headerToolbar: { // Simple header
+                                                     left: 'prev,next',
+                                                     center: 'title',
+                                                     right: '' // Remove buttons
+                                                 },
+                                                 events: calendarEvents,
+                                                 contentHeight: 'auto', // Adjust height to content
+                                                 eventColor: '#1980e6', // UTAS blue for events
+                                                 eventTextColor: '#ffffff',
+                                                 eventDisplay: 'block' // Ensure events take up block space
+                                             });
+                                             calendar.render();
+                                         } else {
+                                             console.error("Schedule calendar container not found");
+                                         }
+                                     });
+                                 </script>
+JS;
+                             } elseif (empty($parsing_errors)) {
+                                 // If schedule_data is empty AND there were no parsing errors to display
+                                 echo '<p class="text-gray-500">(Saved suggestion received but contained no parsable schedule lines or relevant notes)</p>';
+                                 echo "<pre class=\"text-xs text-gray-600 bg-gray-100 p-2 rounded\">" . htmlspecialchars($loaded_result['suggestion']) . "</pre>";
+                             }
 
                          } else {
                              echo "<p class=\"text-gray-500\">Loaded result file contained an unexpected structure.</p>";
-                             echo "<pre class=\"text-xs text-gray-600\">" . htmlspecialchars($json_content) . "</pre>";
+                             echo "<pre class=\"text-xs text-gray-600 bg-gray-100 p-2 rounded\">" . htmlspecialchars($json_content) . "</pre>";
                          }
                      } else {
                          // This case should ideally be covered by $load_error, but as a fallback:
@@ -325,6 +348,9 @@ if (file_exists($resultFilePath)) {
 
   <!-- Include flatpickr JS -->
   <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <!-- Include FullCalendar JS -->
+  <script src='reference/php-event-calendar/fullcalendar/packages/core/main.js'></script>
+  <script src='reference/php-event-calendar/fullcalendar/packages/daygrid/main.js'></script>
 
   <script>
     document.addEventListener('DOMContentLoaded', () => {
