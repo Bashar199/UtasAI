@@ -268,7 +268,7 @@ if (file_exists($resultFilePath)) {
                 <!-- Calendar container -->
                 <div id="calendar-container" class="grid grid-cols-7 gap-1">
                     <!-- Calendar will be populated by JavaScript -->
-                </div>
+                 </div>
               </div>
               <!-- Hidden inputs to store selected dates for form submission -->
               <input type="hidden" id="start_date_hidden" name="start_date">
@@ -427,7 +427,7 @@ JS;
         const monthYearDisplay = document.getElementById('calendar-month-year');
         const prevMonthButton = document.getElementById('prev-month');
         const nextMonthButton = document.getElementById('next-month');
-        
+
         // State variables
         let currentDate = new Date();
         let currentMonth = currentDate.getMonth();
@@ -577,7 +577,7 @@ JS;
                     dayElement.addEventListener('click', function(event) {
                         event.stopPropagation();
                         const dateStr = this.dataset.date;
-                        
+
                         if (holidays.has(dateStr)) {
                             holidays.delete(dateStr);
                         } else {
