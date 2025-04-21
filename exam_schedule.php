@@ -139,7 +139,7 @@ if (file_exists($resultFilePath)) {
             <!-- User Avatar (Placeholder) -->
             <div
               class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10"
-              style='background-image: url("data:image/svg+xml,%3Csvg width=\'40\' height=\'40\' viewBox=\'0 0 40 40\' fill=\'none\' xmlns=\'http://www.w3.org/2000/svg%27%3E%3Crect width=\'40\' height=\'40\' rx=\'20\' fill=\'%23E0E0E0\'/><path d=\'M20 26C23.3137 26 26 23.3137 26 20C26 16.6863 23.3137 14 20 14C16.6863 14 14 16.6863 14 20C14 23.3137 16.6863 26 20 26Z\' fill=\'%23BDBDBD\'/><path d=\'M29.5 31C29.5 27.134 25.176 24 20 24C14.824 24 10.5 27.134 10.5 31H29.5Z\' fill=\'%23BDBDBD\'/><%3C/svg%3E%0A");'
+              style='background-image: url("data:image/svg+xml,%3Csvg width=\'40\' height=\'40\' viewBox=\'0 0 40 40\' fill=\'none\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Crect width=\'40\' height=\'40\' rx=\'20\' fill=\'%23E0E0E0\'/%3E%3Cpath d=\'M20 26C23.3137 26 26 23.3137 26 20C26 16.6863 23.3137 14 20 14C16.6863 14 14 16.6863 14 20C14 23.3137 16.6863 26 20 26Z\' fill=\'%23BDBDBD\'/%3E%3Cpath d=\'M29.5 31C29.5 27.134 25.176 24 20 24C14.824 24 10.5 27.134 10.5 31H29.5Z\' fill=\'%23BDBDBD\'/%3E%3C/svg%3E");'
             ></div>
           </div>
         </header>
