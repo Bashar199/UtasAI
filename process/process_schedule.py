@@ -85,25 +85,40 @@ def get_deepseek_suggestion(available_dates, course_summary):
     end_date = available_dates[-1]
     num_courses = len(course_summary)
     num_available_days = len(available_dates)
-    num_study_days = max(0, num_available_days - num_courses) # Calculate potential study days
-
+    
+    # Determine how to divide the courses across the entire period
+    first_quarter_date = available_dates[int(num_available_days * 0.25)]
+    middle_date = available_dates[int(num_available_days * 0.5)]
+    third_quarter_date = available_dates[int(num_available_days * 0.75)]
+    
+    # Calculate roughly how many courses should be in each quarter
+    courses_per_quarter = max(1, num_courses // 4)
+    
     prompt = f"Create a final exam schedule for {num_courses} courses within the period {start_date} to {end_date}. "
-    prompt += f"The available dates for scheduling (excluding weekends/holidays) are: {', '.join(available_dates)}.\n"
+    prompt += f"The available dates for scheduling (excluding Fridays and holidays) are: {', '.join(available_dates)}.\n"
     prompt += f"Consider the average student performance (lower average suggests a harder course):\n"
     # Sort courses by average score to list harder ones first
     sorted_courses = sorted(course_summary.items(), key=lambda item: item[1])
     for course, avg_mark in sorted_courses:
         prompt += f"- {course}: Average {avg_mark}\n"
     
-    prompt += f"\nInstructions:\n"
-    prompt += f"1. Assign each of the {num_courses} courses to one unique available date.\n"
-    prompt += f"2. Distribute the courses across the available dates, utilizing the period from {start_date} towards {end_date}.\n"
-    prompt += f"3. Balance the schedule by spreading out the harder courses (those with lower averages listed first above).\n"
+    prompt += f"\nREQUIREMENTS (MUST FOLLOW):\n"
+    prompt += f"1. DISTRIBUTE EXAMS THROUGHOUT THE ENTIRE PERIOD: You must place exams evenly from {start_date} all the way to {end_date}.\n"
+    prompt += f"2. EXAMS MUST BE DISTRIBUTED IN ALL TIME PERIODS as follows:\n"
+    prompt += f"   - Schedule approximately {courses_per_quarter} exams before {first_quarter_date}\n"
+    prompt += f"   - Schedule approximately {courses_per_quarter} exams between {first_quarter_date} and {middle_date}\n"
+    prompt += f"   - Schedule approximately {courses_per_quarter} exams between {middle_date} and {third_quarter_date}\n"
+    prompt += f"   - Schedule approximately {courses_per_quarter} exams after {third_quarter_date} and through {end_date}\n"
+    prompt += f"3. THE LAST EXAM MUST BE SCHEDULED within the last few days of the available period (near {end_date}).\n"
+    prompt += f"4. Balance difficulty by placing harder courses (lower averages) with more space around them.\n"
+    
+    # Study days logic
+    num_study_days = max(0, num_available_days - num_courses)
     if num_study_days > 0:
-         prompt += f"4. Use the remaining {num_study_days} available dates as 'Study Day' breaks, placing them strategically between exams, perhaps after harder ones or to avoid long stretches of exams.\n"
-    else:
-         prompt += f"4. If possible, ensure there are no consecutive hard exams scheduled back-to-back.\n"
-    prompt += f"5. Provide the final schedule ONLY as a numbered list, with each line strictly in the format 'YYYY-MM-DD: CourseCode' or 'YYYY-MM-DD: Study Day'. Ensure every available date from the list provided is used for either a course or a Study Day."
+        prompt += f"5. Mark the remaining {num_study_days} days as 'Study Day' and distribute them between exams.\n"
+    
+    prompt += f"\nIMPORTANT FORMAT INSTRUCTIONS:\n"
+    prompt += f"Provide the final schedule ONLY as a numbered list, with each line in the exact format 'YYYY-MM-DD: CourseCode' or 'YYYY-MM-DD: Study Day'. Every available date must be assigned."
 
     # --- DeepSeek API Call (Example Structure) ---
     api_url = "https://api.deepseek.com/v1/chat/completions" # Example Endpoint

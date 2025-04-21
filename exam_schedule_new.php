@@ -76,56 +76,24 @@ if (file_exists($resultFilePath)) {
       href="https://fonts.googleapis.com/css2?display=swap&amp;family=Lexend%3Awght%40400%3B500%3B700%3B900&amp;family=Noto+Sans%3Awght%40400%3B500%3B700%3B900"
     />
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Include flatpickr CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <!-- Include FullCalendar CSS -->
     <link href='reference/php-event-calendar/fullcalendar/packages/core/main.css' rel='stylesheet' />
     <link href='reference/php-event-calendar/fullcalendar/packages/daygrid/main.css' rel='stylesheet' />
-    
+    <script>
+        // Optional: Configure Tailwind if needed
+        // tailwind.config = {
+        //   theme: {
+        //     extend: {
+        //       colors: {
+        //         clifford: '#da373d',
+        //       }
+        //     }
+        //   }
+        // }
+    </script>
     <style>
-        /* Calendar styling */
-        .calendar-day {
-            cursor: pointer;
-            height: 36px;
-            position: relative;
-        }
-        .calendar-day:hover {
-            background-color: #f3f4f6;
-        }
-        .calendar-day.selected {
-            background-color: #1980e6;
-            color: white;
-        }
-        .calendar-day.start-date {
-            border-top-left-radius: 50%;
-            border-bottom-left-radius: 50%;
-        }
-        .calendar-day.end-date {
-            border-top-right-radius: 50%;
-            border-bottom-right-radius: 50%;
-        }
-        .calendar-day.in-range {
-            background-color: #e9f7fd;
-        }
-        .calendar-day.holiday {
-            background-color: #f8d7da;
-            color: #721c24;
-        }
-        .calendar-day.holiday::after {
-            content: 'H';
-            position: absolute;
-            bottom: 2px;
-            right: 4px;
-            font-size: 0.6em;
-        }
-        .calendar-day.disabled {
-            color: #9ca3af;
-            cursor: not-allowed;
-        }
-        .calendar-day-number {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            height: 100%;
-        }
         /* Optional: Add custom styles here if needed, or override Tailwind */
         .calendar-day.selected-start,
         .calendar-day.selected-end {
@@ -265,10 +233,20 @@ if (file_exists($resultFilePath)) {
                     </div>
                   </button>
                 </div>
-                <!-- Calendar container -->
-                <div id="calendar-container" class="grid grid-cols-7 gap-1">
-                    <!-- Calendar will be populated by JavaScript -->
+                <!-- Calendar Grid Headers -->
+                <div class="grid grid-cols-7 text-center">
+                  <p class="text-gray-600 text-[13px] font-bold leading-normal tracking-[0.015em] flex h-10 w-full items-center justify-center pb-0.5">S</p>
+                  <p class="text-gray-600 text-[13px] font-bold leading-normal tracking-[0.015em] flex h-10 w-full items-center justify-center pb-0.5">M</p>
+                  <p class="text-gray-600 text-[13px] font-bold leading-normal tracking-[0.015em] flex h-10 w-full items-center justify-center pb-0.5">T</p>
+                  <p class="text-gray-600 text-[13px] font-bold leading-normal tracking-[0.015em] flex h-10 w-full items-center justify-center pb-0.5">W</p>
+                  <p class="text-gray-600 text-[13px] font-bold leading-normal tracking-[0.015em] flex h-10 w-full items-center justify-center pb-0.5">T</p>
+                  <p class="text-gray-600 text-[13px] font-bold leading-normal tracking-[0.015em] flex h-10 w-full items-center justify-center pb-0.5">F</p>
+                  <p class="text-gray-600 text-[13px] font-bold leading-normal tracking-[0.015em] flex h-10 w-full items-center justify-center pb-0.5">S</p>
                 </div>
+                <!-- Calendar Days Grid (JS populates this) -->
+                <div class="grid grid-cols-7 text-center" id="calendar-days-grid">
+                    <div class="col-span-7 h-40 flex items-center justify-center text-gray-400">Calendar loading...</div>
+                 </div>
               </div>
               <!-- Hidden inputs to store selected dates for form submission -->
               <input type="hidden" id="start_date_hidden" name="start_date">
@@ -411,6 +389,8 @@ JS;
     </div>
   </form>
 
+  <!-- Include flatpickr JS -->
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
   <!-- Include FullCalendar JS -->
   <script src='reference/php-event-calendar/fullcalendar/packages/core/main.js'></script>
   <script src='reference/php-event-calendar/fullcalendar/packages/daygrid/main.js'></script>
@@ -418,7 +398,7 @@ JS;
   <script>
     document.addEventListener('DOMContentLoaded', function() {
         // DOM elements
-        const calendarContainer = document.getElementById('calendar-container');
+        const calendarContainer = document.getElementById('calendar-days-grid').parentNode;
         const startDateHidden = document.getElementById('start_date_hidden');
         const endDateHidden = document.getElementById('end_date_hidden');
         const holidaysHidden = document.getElementById('holiday_dates_hidden');
@@ -427,177 +407,127 @@ JS;
         const monthYearDisplay = document.getElementById('calendar-month-year');
         const prevMonthButton = document.getElementById('prev-month');
         const nextMonthButton = document.getElementById('next-month');
-        
-        // State variables
-        let currentDate = new Date();
-        let currentMonth = currentDate.getMonth();
-        let currentYear = currentDate.getFullYear();
-        let startDate = null;
-        let endDate = null;
-        let holidays = new Set();
-        
-        // Initialize
-        displayCalendar();
-        updateMonthYearDisplay();
-        
-        // Set up event listeners for navigation buttons
-        prevMonthButton.addEventListener('click', function() {
-            currentMonth--;
-            if (currentMonth < 0) {
-                currentMonth = 11;
-                currentYear--;
-            }
-            displayCalendar();
-            updateMonthYearDisplay();
-        });
-        
-        nextMonthButton.addEventListener('click', function() {
-            currentMonth++;
-            if (currentMonth > 11) {
-                currentMonth = 0;
-                currentYear++;
-            }
-            displayCalendar();
-            updateMonthYearDisplay();
-        });
-        
-        // Helper functions
-        function updateMonthYearDisplay() {
-            const monthNames = ["January", "February", "March", "April", "May", "June",
-                "July", "August", "September", "October", "November", "December"];
-            monthYearDisplay.textContent = monthNames[currentMonth] + ' ' + currentYear;
-        }
-        
-        function displayCalendar() {
-            // Clear previous calendar
-            calendarContainer.innerHTML = '';
-            
-            // Get first day of month and last day of month
-            const firstDay = new Date(currentYear, currentMonth, 1);
-            const lastDay = new Date(currentYear, currentMonth + 1, 0);
-            
-            // Calculate days from previous month to fill first row
-            const firstDayIndex = firstDay.getDay(); // 0 = Sunday, 1 = Monday, etc.
-            
-            // Add days from previous month
-            const prevMonthLastDay = new Date(currentYear, currentMonth, 0).getDate();
-            for (let i = firstDayIndex - 1; i >= 0; i--) {
-                const dayElement = createDayElement(prevMonthLastDay - i, true);
-                calendarContainer.appendChild(dayElement);
-            }
-            
-            // Add days of current month
-            const daysInMonth = lastDay.getDate();
-            for (let i = 1; i <= daysInMonth; i++) {
-                const date = new Date(currentYear, currentMonth, i);
-                const dayElement = createDayElement(i, false, date);
-                calendarContainer.appendChild(dayElement);
-                
-                // Add click event
-                dayElement.addEventListener('click', function() {
-                    if (this.classList.contains('disabled')) return;
-                    
-                    const dateValue = formatDate(date);
-                    
-                    if (!startDate || (startDate && endDate)) {
-                        // Start new selection
-                        startDate = dateValue;
-                        endDate = null;
-                        startDateHidden.value = dateValue;
-                        endDateHidden.value = '';
-                        displayStartDate.textContent = dateValue;
-                        displayEndDate.textContent = 'Select end date...';
-                        holidays.clear();
-                        holidaysHidden.value = '';
-                    } else {
-                        // Complete the range
-                        if (new Date(dateValue) < new Date(startDate)) {
-                            endDate = startDate;
-                            startDate = dateValue;
-                        } else {
-                            endDate = dateValue;
+
+        // State
+        let holidayDates = new Set();
+        let selectedRange = { start: null, end: null };
+
+        // Initialize flatpickr
+        const fp = flatpickr(calendarContainer, {
+            mode: "range",
+            dateFormat: "Y-m-d",
+            inline: true,
+            static: true,
+            monthSelectorType: 'static',
+            onChange: function(selectedDates, dateStr, instance) {
+                if (selectedDates.length === 1) {
+                    selectedRange.start = selectedDates[0];
+                    selectedRange.end = null;
+                    startDateHidden.value = instance.formatDate(selectedDates[0], "Y-m-d");
+                    endDateHidden.value = "";
+                    displayStartDate.textContent = startDateHidden.value;
+                    displayEndDate.textContent = 'Select end date...';
+                } else if (selectedDates.length === 2) {
+                    selectedRange.start = selectedDates[0] < selectedDates[1] ? selectedDates[0] : selectedDates[1];
+                    selectedRange.end = selectedDates[0] > selectedDates[1] ? selectedDates[0] : selectedDates[1];
+
+                    startDateHidden.value = instance.formatDate(selectedRange.start, "Y-m-d");
+                    endDateHidden.value = instance.formatDate(selectedRange.end, "Y-m-d");
+                    displayStartDate.textContent = startDateHidden.value;
+                    displayEndDate.textContent = endDateHidden.value;
+
+                    // Clean up holidays outside range
+                    const startStr = startDateHidden.value;
+                    const endStr = endDateHidden.value;
+                    const updatedHolidays = new Set();
+                    holidayDates.forEach(function(holiday) {
+                        if (holiday >= startStr && holiday <= endStr) {
+                            updatedHolidays.add(holiday);
                         }
-                        
-                        startDateHidden.value = startDate;
-                        endDateHidden.value = endDate;
-                        displayStartDate.textContent = startDate;
-                        displayEndDate.textContent = endDate;
-                    }
-                    
-                    displayCalendar(); // Redraw to show selection
-                });
-            }
-            
-            // Add days from next month to fill last row
-            const lastDayIndex = lastDay.getDay();
-            const nextDays = 7 - lastDayIndex - 1;
-            for (let i = 1; i <= nextDays; i++) {
-                const dayElement = createDayElement(i, true);
-                calendarContainer.appendChild(dayElement);
-            }
-        }
-        
-        function createDayElement(day, isDisabled, date) {
-            const dayElement = document.createElement('div');
-            dayElement.classList.add('calendar-day');
-            
-            if (isDisabled) {
-                dayElement.classList.add('disabled');
-            }
-            
-            // Create day number element
-            const dayNumber = document.createElement('div');
-            dayNumber.classList.add('calendar-day-number');
-            dayNumber.textContent = day;
-            dayElement.appendChild(dayNumber);
-            
-            // If we have a date, add data attribute and check for selected status
-            if (date && !isDisabled) {
-                const dateString = formatDate(date);
-                dayElement.dataset.date = dateString;
-                
-                // Check if this day is in selected range
-                if (startDate && dateString === startDate) {
-                    dayElement.classList.add('selected', 'start-date');
-                }
-                if (endDate && dateString === endDate) {
-                    dayElement.classList.add('selected', 'end-date');
-                }
-                if (startDate && endDate && dateString > startDate && dateString < endDate) {
-                    dayElement.classList.add('in-range');
-                }
-                
-                // Check if this is a holiday
-                if (holidays.has(dateString)) {
-                    dayElement.classList.add('holiday');
-                }
-                
-                // Add click handler for holiday selection if in range
-                if (startDate && endDate && dateString >= startDate && dateString <= endDate) {
-                    dayElement.addEventListener('click', function(event) {
-                        event.stopPropagation();
-                        const dateStr = this.dataset.date;
-                        
-                        if (holidays.has(dateStr)) {
-                            holidays.delete(dateStr);
-                        } else {
-                            holidays.add(dateStr);
-                        }
-                        
-                        holidaysHidden.value = Array.from(holidays).join(',');
-                        displayCalendar(); // Redraw calendar
                     });
+                    holidayDates = updatedHolidays;
+                    holidaysHidden.value = Array.from(holidayDates).join(',');
+                } else {
+                    selectedRange = { start: null, end: null };
+                    startDateHidden.value = "";
+                    endDateHidden.value = "";
+                    displayStartDate.textContent = 'Not selected';
+                    displayEndDate.textContent = 'Not selected';
+                    holidayDates.clear();
+                    holidaysHidden.value = '';
                 }
+                instance.redraw();
+            },
+            onDayCreate: function(dObj, dStr, fp, dayElem) {
+                const date = fp.formatDate(dObj, "Y-m-d");
+                
+                if (holidayDates.has(date)) {
+                    dayElem.classList.add('selected-holiday');
+                }
+
+                dayElem.addEventListener('click', function(event) {
+                    if (selectedRange.start && selectedRange.end && 
+                        date >= fp.formatDate(selectedRange.start, "Y-m-d") && 
+                        date <= fp.formatDate(selectedRange.end, "Y-m-d")) {
+                        
+                        event.stopPropagation();
+
+                        if (holidayDates.has(date)) {
+                            holidayDates.delete(date);
+                            dayElem.classList.remove('selected-holiday');
+                        } else {
+                            holidayDates.add(date);
+                            dayElem.classList.add('selected-holiday');
+                        }
+                        holidaysHidden.value = Array.from(holidayDates).sort().join(',');
+
+                        fp.selectedDates.forEach(function(selDate) {
+                            const day = fp.days.querySelector(`.flatpickr-day[aria-label="${fp.formatDate(selDate, fp.config.ariaDateFormat)}"]`);
+                            if(day) fp.selectDate(selDate, false);
+                        });
+                    }
+                }, true);
+            },
+            onMonthChange: function(selectedDates, dateStr, instance) {
+                monthYearDisplay.textContent = instance.formatDate(instance.currentYear + "-" + (instance.currentMonth + 1) + "-01", "F Y");
+            },
+            onYearChange: function(selectedDates, dateStr, instance) {
+                monthYearDisplay.textContent = instance.formatDate(instance.currentYear + "-" + (instance.currentMonth + 1) + "-01", "F Y");
+            },
+            onReady: function(selectedDates, dateStr, instance) {
+                monthYearDisplay.textContent = instance.formatDate(instance.currentYear + "-" + (instance.currentMonth + 1) + "-01", "F Y");
             }
+        });
+
+        // Connect buttons
+        prevMonthButton.addEventListener('click', function() { fp.changeMonth(-1); });
+        nextMonthButton.addEventListener('click', function() { fp.changeMonth(1); });
+
+        // Initial setup
+        if (!startDateHidden.value || !endDateHidden.value) {
+            displayStartDate.textContent = 'Not selected';
+            displayEndDate.textContent = 'Not selected';
+        } else {
+            displayStartDate.textContent = startDateHidden.value;
+            displayEndDate.textContent = endDateHidden.value;
             
-            return dayElement;
+            const initialHolidays = holidaysHidden.value.split(',').filter(function(d) { return d.trim() !== ''; });
+            holidayDates = new Set(initialHolidays);
+            fp.redraw();
+        }
+
+        // Style adjustments
+        const flatpickrCalendar = calendarContainer.querySelector('.flatpickr-calendar');
+        if(flatpickrCalendar) {
+            flatpickrCalendar.classList.add('shadow-none', 'border-none', 'w-full');
+            flatpickrCalendar.style.width = '100%';
         }
         
-        function formatDate(date) {
-            const year = date.getFullYear();
-            const month = (date.getMonth() + 1).toString().padStart(2, '0');
-            const day = date.getDate().toString().padStart(2, '0');
-            return `${year}-${month}-${day}`;
+        const flatpickrDays = calendarContainer.querySelector('.dayContainer');
+        if(flatpickrDays) {
+            flatpickrDays.classList.add('w-full');
+            flatpickrDays.style.width = '100%';
+            flatpickrDays.style.maxWidth = '100%';
         }
     });
   </script>
