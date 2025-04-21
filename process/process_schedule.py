@@ -149,7 +149,7 @@ def get_deepseek_suggestion(available_dates, course_summary):
 
 if __name__ == "__main__":
     # Use raw string (r'...') for Windows paths to avoid issues with backslashes
-    RESULT_FILE = r'C:\Users\tamee\UtasAI\process\schedule_result.json' # Output file path
+    RESULT_FILE = 'process/schedule_result.json' # Output file path relative to the project root
 
     # Get input from command line arguments
     if len(sys.argv) < 3:

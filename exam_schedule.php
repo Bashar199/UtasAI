@@ -257,9 +257,16 @@ if (file_exists($resultFilePath)) {
                              // Prepare for FullCalendar
                              if (!empty($schedule_data)) {
                                  echo '<div id="schedule-calendar" class="mb-4"></div>'; // Container for FullCalendar
-                                 // Encode data for JavaScript
+                                 // Encode data for JavaScript, adding a type
                                  $calendar_events_json = json_encode(array_map(function($item) {
-                                     return ['title' => $item['course'], 'start' => $item['date']];
+                                     $event_data = ['title' => $item['course'], 'start' => $item['date']];
+                                     // Check if the title is exactly "Study Day" (case-insensitive check might be better depending on input)
+                                     if (strcasecmp(trim($item['course']), 'Study Day') === 0) {
+                                         $event_data['type'] = 'study_day';
+                                     } else {
+                                         $event_data['type'] = 'course';
+                                     }
+                                     return $event_data;
                                  }, $schedule_data));
 
                                  echo <<<JS
@@ -278,8 +285,19 @@ if (file_exists($resultFilePath)) {
                                                  },
                                                  events: calendarEvents,
                                                  contentHeight: 'auto', // Adjust height to content
-                                                 eventColor: '#1980e6', // UTAS blue for events
-                                                 eventTextColor: '#ffffff',
+                                                 // Use eventDataTransform to set colors based on type
+                                                 eventDataTransform: function(eventData) {
+                                                     if (eventData.type === 'study_day') {
+                                                         eventData.color = '#28a745'; // Green for study day
+                                                         eventData.textColor = '#ffffff'; // White text
+                                                     } else {
+                                                         eventData.color = '#1980e6'; // UTAS blue for courses
+                                                         eventData.textColor = '#ffffff'; // White text
+                                                     }
+                                                     return eventData;
+                                                 },
+                                                 // eventColor: '#1980e6', // Default color (now handled by transform)
+                                                 // eventTextColor: '#ffffff', // Default text color (now handled by transform)
                                                  eventDisplay: 'block' // Ensure events take up block space
                                              });
                                              calendar.render();
