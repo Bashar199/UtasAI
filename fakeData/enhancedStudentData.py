@@ -30,6 +30,16 @@ courses = [
     {"code": "EEE220", "name": "Signals and Systems", "level": "Diploma"},
     {"code": "EEE235", "name": "Microcontrollers", "level": "Diploma"},
     
+    # Advanced Diploma Level Courses (200-300 series)
+    {"code": "EEE245", "name": "Advanced Programming", "level": "Advanced Diploma"},
+    {"code": "EEE250", "name": "Digital Communications", "level": "Advanced Diploma"},
+    {"code": "EEE265", "name": "Industrial Electronics", "level": "Advanced Diploma"},
+    {"code": "EEE275", "name": "Electrical Machines", "level": "Advanced Diploma"},
+    {"code": "EEE280", "name": "Control Systems Fundamentals", "level": "Advanced Diploma"},
+    {"code": "EEE290", "name": "Power Distribution", "level": "Advanced Diploma"},
+    {"code": "EEE295", "name": "Electronic Instrumentation", "level": "Advanced Diploma"},
+    {"code": "EEE298", "name": "Embedded System Design", "level": "Advanced Diploma"},
+    
     # Bachelor Level Courses (300-400 series)
     {"code": "EEE301", "name": "Advanced Circuit Theory", "level": "Bachelor"},
     {"code": "EEE315", "name": "Power Electronics", "level": "Bachelor"},
@@ -50,15 +60,21 @@ TOTAL_STUDENTS = 150
 
 # Distribution of academic levels (percentage)
 LEVEL_DISTRIBUTION = {
-    "Diploma": 0.55,  # 55% in Diploma programs
-    "Bachelor": 0.45  # 45% in Bachelor programs
+    "Diploma": 0.35,        # 35% in Diploma programs
+    "Advanced Diploma": 0.30, # 30% in Advanced Diploma programs
+    "Bachelor": 0.35        # 35% in Bachelor programs
 }
 
 # Generate student IDs based on academic year and level
 def generate_student_ids(count, level):
     ids = set()
-    # Different prefix for diploma (10d) and bachelor (12s)
-    prefix = "10d" if level == "Diploma" else "12s"
+    # Different prefix for each level
+    if level == "Diploma":
+        prefix = "10d"
+    elif level == "Advanced Diploma":
+        prefix = "11a"
+    else:  # Bachelor
+        prefix = "12s"
     
     while len(ids) < count:
         middle_part = ''.join(random.choices('0123456789', k=3))
@@ -223,12 +239,14 @@ def generate_and_insert_student_data():
             
             # Calculate number of students per level based on distribution
             diploma_count = int(TOTAL_STUDENTS * LEVEL_DISTRIBUTION["Diploma"])
-            bachelor_count = TOTAL_STUDENTS - diploma_count
+            adv_diploma_count = int(TOTAL_STUDENTS * LEVEL_DISTRIBUTION["Advanced Diploma"])
+            bachelor_count = TOTAL_STUDENTS - diploma_count - adv_diploma_count
             
-            print(f"Generating {diploma_count} Diploma students and {bachelor_count} Bachelor students")
+            print(f"Generating {diploma_count} Diploma students, {adv_diploma_count} Advanced Diploma students, and {bachelor_count} Bachelor students")
             
             # Generate student IDs for each level
             diploma_students = generate_student_ids(diploma_count, "Diploma")
+            adv_diploma_students = generate_student_ids(adv_diploma_count, "Advanced Diploma")
             bachelor_students = generate_student_ids(bachelor_count, "Bachelor")
             
             # Insert all students to the Students table with their level
@@ -238,6 +256,12 @@ def generate_and_insert_student_data():
                     (student_id, "Diploma")
                 )
             
+            for student_id in adv_diploma_students:
+                cursor.execute(
+                    "INSERT IGNORE INTO Students (student_id, academic_level) VALUES (%s, %s)",
+                    (student_id, "Advanced Diploma")
+                )
+            
             for student_id in bachelor_students:
                 cursor.execute(
                     "INSERT IGNORE INTO Students (student_id, academic_level) VALUES (%s, %s)",
@@ -245,31 +269,37 @@ def generate_and_insert_student_data():
                 )
             
             conn.commit()
-            print(f"Inserted {len(diploma_students) + len(bachelor_students)} students into the database")
+            print(f"Inserted {len(diploma_students) + len(adv_diploma_students) + len(bachelor_students)} students into the database")
             
             # Filter courses by level
             diploma_courses = [course for course in courses if course['level'] == "Diploma"]
+            adv_diploma_courses = [course for course in courses if course['level'] == "Advanced Diploma"]
             bachelor_courses = [course for course in courses if course['level'] == "Bachelor"]
             
             # Define enrollment patterns with probabilities
-            # Format: (primary_level_courses, other_level_courses, probability)
+            # Format: (primary_level_courses, secondary_level_courses, tertiary_level_courses, probability)
             enrollment_patterns = {
                 "Diploma": [
-                    (5, 0, 0.5),  # 50% take 5 diploma courses
-                    (4, 0, 0.3),  # 30% take 4 diploma courses
-                    (4, 1, 0.2),  # 20% take 4 diploma + 1 bachelor course
+                    (5, 0, 0, 0.6),  # 60% take 5 diploma courses
+                    (4, 1, 0, 0.3),  # 30% take 4 diploma + 1 adv diploma course
+                    (4, 0, 0, 0.1),  # 10% take 4 diploma courses only
+                ],
+                "Advanced Diploma": [
+                    (5, 0, 0, 0.5),  # 50% take 5 adv diploma courses
+                    (4, 1, 0, 0.2),  # 20% take 4 adv diploma + 1 bachelor course
+                    (4, 0, 1, 0.2),  # 20% take 4 adv diploma + 1 diploma course
+                    (4, 0, 0, 0.1),  # 10% take 4 adv diploma courses only
                 ],
                 "Bachelor": [
-                    (5, 0, 0.6),  # 60% take 5 bachelor courses
-                    (4, 0, 0.3),  # 30% take 4 bachelor courses
-                    (4, 1, 0.1),  # 10% take 4 bachelor + 1 diploma course
+                    (5, 0, 0, 0.6),  # 60% take 5 bachelor courses
+                    (4, 1, 0, 0.2),  # 20% take 4 bachelor + 1 adv diploma course
+                    (4, 0, 0, 0.2),  # 20% take 4 bachelor courses only
                 ]
             }
             
             # Process Diploma students
             for student_id in diploma_students:
                 # Assign student ability (randomized but consistent for this student)
-                # Using the student_id to create a consistent ability score
                 student_ability = random.Random(student_id).random()
                 
                 # Choose enrollment pattern based on probability
@@ -278,23 +308,28 @@ def generate_and_insert_student_data():
                 selected_pattern = None
                 
                 for pattern in enrollment_patterns["Diploma"]:
-                    cumulative_prob += pattern[2]
+                    cumulative_prob += pattern[3]
                     if pattern_choice <= cumulative_prob:
                         selected_pattern = pattern
                         break
                 
-                primary_course_count, other_course_count, _ = selected_pattern
+                primary_course_count, secondary_course_count, tertiary_course_count, _ = selected_pattern
                 
-                # Select random diploma courses
-                selected_diploma_courses = random.sample(diploma_courses, primary_course_count)
-                selected_bachelor_courses = []
+                # Select random courses for each level
+                selected_primary_courses = random.sample(diploma_courses, primary_course_count)
+                selected_secondary_courses = []
+                selected_tertiary_courses = []
                 
-                # If taking courses from the other level
-                if other_course_count > 0:
-                    selected_bachelor_courses = random.sample(bachelor_courses, other_course_count)
+                # If taking courses from the secondary level (Advanced Diploma)
+                if secondary_course_count > 0:
+                    selected_secondary_courses = random.sample(adv_diploma_courses, secondary_course_count)
+                
+                # If taking courses from the tertiary level (Bachelor)
+                if tertiary_course_count > 0:
+                    selected_tertiary_courses = random.sample(bachelor_courses, tertiary_course_count)
                 
                 # Combine all courses for this student
-                student_courses = selected_diploma_courses + selected_bachelor_courses
+                student_courses = selected_primary_courses + selected_secondary_courses + selected_tertiary_courses
                 
                 # Process each course enrollment for this student
                 for course in student_courses:
@@ -333,6 +368,76 @@ def generate_and_insert_student_data():
                         )
                     )
             
+            # Process Advanced Diploma students
+            for student_id in adv_diploma_students:
+                # Assign student ability
+                student_ability = random.Random(student_id).random()
+                
+                # Choose enrollment pattern based on probability
+                pattern_choice = random.random()
+                cumulative_prob = 0
+                selected_pattern = None
+                
+                for pattern in enrollment_patterns["Advanced Diploma"]:
+                    cumulative_prob += pattern[3]
+                    if pattern_choice <= cumulative_prob:
+                        selected_pattern = pattern
+                        break
+                
+                primary_course_count, secondary_course_count, tertiary_course_count, _ = selected_pattern
+                
+                # Select random courses for each level
+                selected_primary_courses = random.sample(adv_diploma_courses, primary_course_count)
+                selected_secondary_courses = []
+                selected_tertiary_courses = []
+                
+                # If taking courses from the secondary level (Bachelor)
+                if secondary_course_count > 0:
+                    selected_secondary_courses = random.sample(bachelor_courses, secondary_course_count)
+                
+                # If taking courses from the tertiary level (Diploma)
+                if tertiary_course_count > 0:
+                    selected_tertiary_courses = random.sample(diploma_courses, tertiary_course_count)
+                
+                # Combine all courses for this student
+                student_courses = selected_primary_courses + selected_secondary_courses + selected_tertiary_courses
+                
+                # Process each course enrollment for this student
+                for course in student_courses:
+                    # Insert course enrollment
+                    cursor.execute(
+                        "INSERT IGNORE INTO CourseEnrollments (student_id, course_code) VALUES (%s, %s)",
+                        (student_id, course['code'])
+                    )
+                    
+                    # Course difficulty is partly based on course code and partly random
+                    course_number = int(course['code'][3:])
+                    base_difficulty = (course_number - 100) / 400  # Normalize to 0-1 range
+                    course_difficulty = base_difficulty + random.uniform(-0.1, 0.1)
+                    course_difficulty = max(0, min(1, course_difficulty))
+                    
+                    # Generate marks
+                    test1, midterm, test2, assignment, total, grade = generate_marks(student_ability, course_difficulty)
+                    
+                    # Insert student marks
+                    cursor.execute(
+                        """
+                        INSERT IGNORE INTO StudentMarks 
+                        (student_id, course_code, test1, midterm, test2, assignment, total, grade) 
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (
+                            student_id, 
+                            course['code'], 
+                            test1, 
+                            midterm, 
+                            test2, 
+                            assignment, 
+                            total, 
+                            grade
+                        )
+                    )
+            
             # Process Bachelor students
             for student_id in bachelor_students:
                 # Assign student ability
@@ -344,23 +449,24 @@ def generate_and_insert_student_data():
                 selected_pattern = None
                 
                 for pattern in enrollment_patterns["Bachelor"]:
-                    cumulative_prob += pattern[2]
+                    cumulative_prob += pattern[3]
                     if pattern_choice <= cumulative_prob:
                         selected_pattern = pattern
                         break
                 
-                primary_course_count, other_course_count, _ = selected_pattern
+                primary_course_count, secondary_course_count, tertiary_course_count, _ = selected_pattern
                 
-                # Select random bachelor courses
-                selected_bachelor_courses = random.sample(bachelor_courses, primary_course_count)
-                selected_diploma_courses = []
+                # Select random courses for each level
+                selected_primary_courses = random.sample(bachelor_courses, primary_course_count)
+                selected_secondary_courses = []
+                selected_tertiary_courses = []
                 
-                # If taking courses from the other level
-                if other_course_count > 0:
-                    selected_diploma_courses = random.sample(diploma_courses, other_course_count)
+                # If taking courses from the secondary level (Advanced Diploma)
+                if secondary_course_count > 0:
+                    selected_secondary_courses = random.sample(adv_diploma_courses, secondary_course_count)
                 
                 # Combine all courses for this student
-                student_courses = selected_bachelor_courses + selected_diploma_courses
+                student_courses = selected_primary_courses + selected_secondary_courses + selected_tertiary_courses
                 
                 # Process each course enrollment for this student
                 for course in student_courses:
