@@ -293,13 +293,33 @@ if (file_exists($resultFilePath)) {
                              // Parse the suggestion
                              $suggestion_lines = explode("\n", trim($loaded_result['suggestion']));
                              $schedule_data = [];
+                             $all_course_codes = []; // Collect all course codes to fetch levels
                              $parsing_errors = [];
                              foreach ($suggestion_lines as $line) {
                                  $line = trim($line);
                                  if (empty($line)) continue;
-                                 // Updated regex: Expect format like "#. YYYY-MM-DD: COURSE_CODE" or "#. YYYY-MM-DD: Study Day"
-                                 if (preg_match('/^\d+\.\s*(\d{4}-\d{2}-\d{2})\s*:\s*(\S+.*)/i', $line, $matches)) {
-                                     $schedule_data[] = ['date' => trim($matches[1]), 'course' => trim($matches[2])];
+                                 
+                                 // Updated regex: Match date, colon, and optional course codes after
+                                 if (preg_match('/^\d+\.\s*(\d{4}-\d{2}-\d{2}):\s*(.*)$/i', $line, $matches)) {
+                                     $date = trim($matches[1]);
+                                     $courses_str = trim($matches[2]);
+                                     
+                                     if (!empty($courses_str)) {
+                                         $courses_on_day = array_map('trim', explode(',', $courses_str));
+                                         // Filter out empty strings that might result from trailing commas
+                                         $courses_on_day = array_filter($courses_on_day);
+                                         
+                                         if (!empty($courses_on_day)) {
+                                             $schedule_data[$date] = $courses_on_day;
+                                             $all_course_codes = array_merge($all_course_codes, $courses_on_day);
+                                         } else {
+                                             // Date listed but no courses (intended break/study day)
+                                             $schedule_data[$date] = []; // Represent as empty array
+                                         }
+                                     } else {
+                                         // Date listed but no courses (intended break/study day)
+                                         $schedule_data[$date] = []; // Represent as empty array
+                                     }
                                  } else {
                                      // Keep lines that aren't schedule entries but ignore common intro/outro text patterns
                                      if (!preg_match('/^\d{4}-\d{2}-\d{2}/i', $line) && !preg_match('/^(here is|based on|schedule|note:|```)/i', $line)) {
@@ -307,6 +327,34 @@ if (file_exists($resultFilePath)) {
                                      }
                                  }
                              }
+
+                             // --- Fetch Course Levels from Database ---
+                             $course_levels = [];
+                             if (!empty($all_course_codes)) {
+                                 $unique_codes = array_unique($all_course_codes);
+                                 $placeholders = implode(',', array_fill(0, count($unique_codes), '?'));
+                                 $types = str_repeat('s', count($unique_codes));
+                                 
+                                 try {
+                                     require_once 'db_connect.php'; // Ensure connection is available
+                                     if (isset($conn) && $conn) {
+                                         $stmt = $conn->prepare("SELECT course_code, academic_level FROM Courses WHERE course_code IN ($placeholders)");
+                                         $stmt->bind_param($types, ...$unique_codes);
+                                         $stmt->execute();
+                                         $result = $stmt->get_result();
+                                         while ($row = $result->fetch_assoc()) {
+                                             $course_levels[$row['course_code']] = $row['academic_level'];
+                                         }
+                                         $stmt->close();
+                                         // $conn->close(); // Keep connection open if needed elsewhere, or close if done
+                                     } else {
+                                         throw new Exception("Database connection not established in db_connect.php");
+                                     }
+                                 } catch (Exception $e) {
+                                     $load_error .= " | DB Error fetching course levels: " . $e->getMessage();
+                                 }
+                             }
+                             // --- End Fetch Course Levels ---
 
                              // Display parsing errors if any
                              if (!empty($parsing_errors)) {
@@ -321,17 +369,24 @@ if (file_exists($resultFilePath)) {
                              // Prepare for FullCalendar
                              if (!empty($schedule_data)) {
                                  echo '<div id="schedule-calendar" class="mb-4"></div>'; // Container for FullCalendar
-                                 // Encode data for JavaScript, adding a type
-                                 $calendar_events_json = json_encode(array_map(function($item) {
-                                     $event_data = ['title' => $item['course'], 'start' => $item['date']];
-                                     // Check if the title is exactly "Study Day" (case-insensitive check might be better depending on input)
-                                     if (strcasecmp(trim($item['course']), 'Study Day') === 0) {
-                                         $event_data['type'] = 'study_day';
-                                     } else {
-                                         $event_data['type'] = 'course';
-                                     }
-                                     return $event_data;
-                                 }, $schedule_data));
+                                 
+                                 // Create events array for FullCalendar, one event per course
+                                 $calendar_events = [];
+                                 foreach ($schedule_data as $date => $courses_on_day) {
+                                     if (!empty($courses_on_day)) {
+                                         foreach ($courses_on_day as $course_code) {
+                                             $level = isset($course_levels[$course_code]) ? $course_levels[$course_code] : 'Unknown'; // Get level
+                                             $calendar_events[] = [
+                                                 'title' => $course_code,
+                                                 'start' => $date,
+                                                 'level' => $level // Add level to event data
+                                             ];
+                                         }
+                                     } 
+                                     // Do not add anything for days with $courses_on_day = [] (empty days)
+                                 }
+                                 
+                                 $calendar_events_json = json_encode($calendar_events);
 
                                  echo <<<JS
                                  <script>
@@ -339,28 +394,37 @@ if (file_exists($resultFilePath)) {
                                          var calendarEl = document.getElementById('schedule-calendar');
                                          if (calendarEl) {
                                              var calendarEvents = {$calendar_events_json};
+                                             // Define colors for levels
+                                             var levelColors = {
+                                                 'Diploma': '#e63946',          // Bright red
+                                                 'Advanced Diploma': '#fcbf49', // Gold/amber
+                                                 'Bachelor': '#2a9d8f',        // Teal
+                                                 'Unknown': '#6c757d'           // Gray
+                                             };
+                                             
                                              var calendar = new FullCalendar.Calendar(calendarEl, {
                                                  plugins: [ 'dayGrid' ],
                                                  initialView: 'dayGridMonth',
-                                                 headerToolbar: { // Simple header
+                                                 headerToolbar: { 
                                                      left: 'prev,next',
                                                      center: 'title',
-                                                     right: '' // Remove buttons
+                                                     right: '' 
                                                  },
                                                  events: calendarEvents,
-                                                 contentHeight: 'auto', // Adjust height to content
-                                                 // Use eventDataTransform to set colors based on type
-                                                 eventDataTransform: function(eventData) {
-                                                     if (eventData.type === 'study_day') {
-                                                         eventData.color = '#28a745'; // Green for study day
-                                                         eventData.textColor = '#ffffff'; // White text
-                                                     } else {
-                                                         eventData.color = '#1980e6'; // UTAS blue for courses
-                                                         eventData.textColor = '#ffffff'; // White text
+                                                 contentHeight: 'auto', 
+                                                 // Use eventDidMount for more control over rendering
+                                                 eventDidMount: function(info) {
+                                                     var level = info.event.extendedProps.level;
+                                                     if (level && levelColors[level]) {
+                                                         info.el.style.backgroundColor = levelColors[level];
+                                                         info.el.style.borderColor = levelColors[level]; // Match border
+                                                         // Ensure text is readable on colored background
+                                                         info.el.style.color = '#ffffff'; // White text often works well
+                                                         // Add a class for potential further styling
+                                                         info.el.classList.add('level-' + level.toLowerCase().replace(' ', '-'));
                                                      }
-                                                     return eventData;
                                                  },
-                                                 eventDisplay: 'block' // Ensure events take up block space
+                                                 eventDisplay: 'block' 
                                              });
                                              calendar.render();
                                          } else {
