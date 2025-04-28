@@ -1,7 +1,7 @@
 # config.py
 
 # Replace with your actual DeepSeek API Key
-DEEPSEEK_API_KEY = "sk-c839c3c3d5e44222bd22fc3e98df2592"
+DEEPSEEK_API_KEY = "xxxxxxxxxxxxxxxxxxxxxxx"
 
 # MySQL Database Configuration (assumes XAMPP defaults)
 DB_CONFIG = {
